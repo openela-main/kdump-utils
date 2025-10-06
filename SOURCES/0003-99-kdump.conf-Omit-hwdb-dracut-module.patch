@@ -1,0 +1,43 @@
+From 966dc0845980d2150a6614387ce6a05c79e1eb80 Mon Sep 17 00:00:00 2001
+From: Lichen Liu <lichliu@redhat.com>
+Date: Tue, 21 Jan 2025 14:04:28 +0800
+Subject: [PATCH] 99-kdump.conf: Omit hwdb dracut module
+
+The hwdb (udev hardware database) file `/etc/udev/hwdb.bin` is currently
+included in the initramfs, taking up approximately 13MB of space. This is
+a significant size for kdump initramfs, which may lead more OOM issues.
+
+Certain advanced device initializations that rely on hwdb (e.g., custom
+keyboard mappings, specific touchpad configurations) may not work in the
+kdump environment.
+
+However, kdump do not require hwdb in the most cases, as critical devices
+like storage, network, and basic input devices are typically handled by
+standard udev rules and kernel drivers.
+
+This change prioritizes reducing initramfs size over retaining hardware
+database functionality, as the latter is rarely critical in the kdump
+environment.
+
+Resolves: https://issues.redhat.com/browse/RHEL-57731
+
+Signed-off-by: Lichen Liu <lichliu@redhat.com>
+---
+ 99-kdump.conf | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/99-kdump.conf b/99-kdump.conf
+index 696c7ac..1301c44 100644
+--- a/99-kdump.conf
++++ b/99-kdump.conf
+@@ -1,4 +1,4 @@
+ dracutmodules=''
+ add_dracutmodules=' kdumpbase '
+-omit_dracutmodules=' rdma plymouth resume ifcfg earlykdump '
+-omit_drivers+=' nouveau amdgpu '
+\ No newline at end of file
++omit_dracutmodules=' hwdb rdma plymouth resume ifcfg earlykdump '
++omit_drivers+=' nouveau amdgpu '
+-- 
+2.47.0
+

@@ -1,0 +1,96 @@
+From ca42bd690ae5e15ac5c026c646aad18fb74d0836 Mon Sep 17 00:00:00 2001
+From: Lichen Liu <lichliu@redhat.com>
+Date: Thu, 6 Mar 2025 13:58:02 +0800
+Subject: [PATCH] kdump-lib.sh: Fix all 1G boundry to 2G
+
+According to the current system requirements of Fedora[1] and RHEL[2], at least
+2G physical memory is required to install the operating system, so it is not
+meaningful to reserve crashkernel from 1G.
+
+This patch updates the default value of crashkernel for aarch64 architecture to
+reserve from 2G.
+
+Also updated the testing part.
+
+See Also:
+[1] Fedora Minimum System Configuration: https://docs.fedoraproject.org/en-US/fedora/latest/release-notes/hardware_overview/#hardware_overview-specs
+[2] Prerequisites for enabling virtualization on RHEL: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/configuring_and_managing_virtualization/assembly_enabling-virtualization-in-rhel-9_configuring-and-managing-virtualization#proc_enabling-virtualization-in-rhel-9_assembly_enabling-virtualization-in-rhel-9
+
+Signed-off-by: Lichen Liu <lichliu@redhat.com>
+Signed-off-by: Coiby Xu <coxu@redhat.com>
+---
+ kdump-lib.sh                             |  4 ++--
+ spec/kdump-lib_spec.sh                   | 12 ++++++------
+ spec/kdumpctl_manage_crashkernel_spec.sh |  4 ++--
+ 3 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/kdump-lib.sh b/kdump-lib.sh
+index 143f5056..0961f469 100755
+--- a/kdump-lib.sh
++++ b/kdump-lib.sh
+@@ -1011,7 +1011,7 @@ kdump_get_arch_recommend_crashkernel()
+ 		local _running_kernel
+ 
+ 		# Base line for 4K variant kernel. The formula is based on x86 plus extra = 64M
+-		_ck_cmdline="1G-4G:256M,4G-64G:320M,64G-:576M"
++		_ck_cmdline="2G-4G:256M,4G-64G:320M,64G-:576M"
+ 		if [[ -z "$2" ]]; then
+ 			_running_kernel=$(_get_kdump_kernel_version)
+ 		else
+@@ -1021,7 +1021,7 @@ kdump_get_arch_recommend_crashkernel()
+ 		# the naming convention of 64k variant suffixes with +64k, e.g. "vmlinuz-5.14.0-312.el9.aarch64+64k"
+ 		if echo "$_running_kernel" | grep -q 64k; then
+ 			# Without smmu, the diff of MemFree between 4K and 64K measured on a high end aarch64 machine is 82M.
+-			# Picking up 100M to cover this diff. And finally, we have "1G-4G:356M;4G-64G:420M;64G-:676M"
++			# Picking up 100M to cover this diff. And finally, we have "2G-4G:356M;4G-64G:420M;64G-:676M"
+ 			((_delta += 100))
+ 			# On a 64K system, the extra 384MB is calculated by: cmdq_num * 16 bytes + evtq_num * 32B + priq_num * 16B
+ 			# While on a 4K system, it is negligible
+diff --git a/spec/kdump-lib_spec.sh b/spec/kdump-lib_spec.sh
+index f13372c7..daacb797 100644
+--- a/spec/kdump-lib_spec.sh
++++ b/spec/kdump-lib_spec.sh
+@@ -51,11 +51,11 @@ Describe 'kdump-lib'
+ 	Describe "_crashkernel_add()"
+ 		Context "For valid input values"
+ 			Parameters
+-				"1G-4G:256M,4G-64G:320M,64G-:576M" "100M" "1G-4G:356M,4G-64G:420M,64G-:676M"
+-				"1G-4G:256M" "100" "1G-4G:268435556" # avoids any rounding when size % 1024 != 0
+-				"1G-4G:256M,4G-64G:320M,64G-:576M@4G" "100M" "1G-4G:356M,4G-64G:420M,64G-:676M@4G"
+-				"1G-4G:1G,4G-64G:2G,64G-:3G@4G" "100M" "1G-4G:1124M,4G-64G:2148M,64G-:3172M@4G"
+-				"1G-4G:10000K,4G-64G:20000K,64G-:40000K@4G" "100M" "1G-4G:112400K,4G-64G:122400K,64G-:142400K@4G"
++				"2G-4G:256M,4G-64G:320M,64G-:576M" "100M" "2G-4G:356M,4G-64G:420M,64G-:676M"
++				"2G-4G:256M" "100" "2G-4G:268435556" # avoids any rounding when size % 1024 != 0
++				"2G-4G:256M,4G-64G:320M,64G-:576M@4G" "100M" "2G-4G:356M,4G-64G:420M,64G-:676M@4G"
++				"2G-4G:1G,4G-64G:2G,64G-:3G@4G" "100M" "2G-4G:1124M,4G-64G:2148M,64G-:3172M@4G"
++				"2G-4G:10000K,4G-64G:20000K,64G-:40000K@4G" "100M" "2G-4G:112400K,4G-64G:122400K,64G-:142400K@4G"
+ 				"1,high" "1" "2,high"
+ 				"1K,low" "1" "1025,low"
+ 				"128G-1T:4G" "0" "128G-1T:4G"
+@@ -74,7 +74,7 @@ Describe 'kdump-lib'
+ 		End
+ 		Context "For invalid input values"
+ 			Parameters
+-				"1G-4G:256M.4G-64G:320M" "100M"
++				"2G-4G:256M.4G-64G:320M" "100M"
+ 				"foo" "1"
+ 				"1" "bar"
+ 			End
+diff --git a/spec/kdumpctl_manage_crashkernel_spec.sh b/spec/kdumpctl_manage_crashkernel_spec.sh
+index 3255d9aa..5817b519 100644
+--- a/spec/kdumpctl_manage_crashkernel_spec.sh
++++ b/spec/kdumpctl_manage_crashkernel_spec.sh
+@@ -4,8 +4,8 @@ Describe 'Management of the kernel crashkernel parameter.'
+ 	Include ./kdumpctl
+ 	kernel1=/boot/vmlinuz-5.15.6-100.fc34.x86_64
+ 	kernel2=/boot/vmlinuz-5.14.14-200.fc34.x86_64
+-	old_ck=1G-4G:162M,4G-64G:256M,64G-:512M
+-	new_ck=1G-4G:196M,4G-64G:256M,64G-:512M
++	old_ck=2G-4G:162M,4G-64G:256M,64G-:512M
++	new_ck=2G-4G:196M,4G-64G:256M,64G-:512M
+ 	KDUMP_SPEC_TEST_RUN_DIR=$(mktemp -u /tmp/spec_test.XXXXXXXXXX)
+ 	GRUB_CFG="$KDUMP_SPEC_TEST_RUN_DIR/grub.cfg"
+ 
+-- 
+2.48.1
+

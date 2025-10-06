@@ -1,0 +1,37 @@
+From 1d40ea3a186c65e009f8cca775e6bb07c39fd80f Mon Sep 17 00:00:00 2001
+From: Lichen Liu <lichliu@redhat.com>
+Date: Tue, 27 May 2025 14:04:36 +0800
+Subject: [PATCH] mkdumprd: replace lz4hc with lzma for better compression in
+ squash image
+
+Among the compression algorithms currently enabled in RHEL-10,
+erofs+lzma has a higher compression ratio than lz4hc, this patch
+will replace it with lzma.
+
+Testing shows when using erofs+lz4hc in RHEL-10, the size of the
+initramfs generated for local dump is 47M, and the size for nfs
+dump is 57M. After using lzma, the size is reduced to 39M and 45M.
+This is very closely compared to the 38M and 44M when using
+squashfs+zstd.
+
+Signed-off-by: Lichen Liu <lichliu@redhat.com>
+---
+ mkdumprd | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/mkdumprd b/mkdumprd
+index 5b6daaa..6881d8a 100644
+--- a/mkdumprd
++++ b/mkdumprd
+@@ -404,7 +404,7 @@ if ! have_compression_in_dracut_args; then
+ 		dracut_args+=(--squash-compressor zstd)
+ 	elif has_dracut_module squash-erofs && has_command mkfs.erofs; then
+ 		dracut_args+=(--add squash-erofs)
+-		dracut_args+=(--squash-compressor lz4hc)
++		dracut_args+=(--squash-compressor lzma)
+ 	elif has_command mksquashfs; then
+ 		# only true for dracut <= 103
+ 		dracut_args+=(--add squash)
+-- 
+2.47.0
+

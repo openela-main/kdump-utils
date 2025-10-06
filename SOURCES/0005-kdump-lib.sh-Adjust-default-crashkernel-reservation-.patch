@@ -1,0 +1,64 @@
+From fe18f933baed9eaa18e0c2427aaca4640d8f6fa1 Mon Sep 17 00:00:00 2001
+From: Lichen Liu <lichliu@redhat.com>
+Date: Thu, 6 Mar 2025 10:21:43 +0800
+Subject: [PATCH] kdump-lib.sh: Adjust default crashkernel reservation for
+ x86_64 and s390x
+
+With new kernel features being added, both the kernel itself and the initramfs
+have gradually increased in size.
+
+Previously, we used squashfs to package and reduce the initramfs size. However,
+since squashfs will be replaced by erofs, we have transitioned to erofs. The
+compression algorithms supported by erofs differ from those used in squashfs.
+In previous squashfs implementations, we used zstd compression, but in RHEL-10,
+the erofs implementation in the kernel does not yet support zstd decompression.
+As a result, we had to switch to other compression algorithms, leading to
+changes in the initramfs size.
+
+In some scenarios, the previous 192M crashkernel reservation is no longer
+sufficient. Recent NFS testing has shown that at least 238M is required to
+successfully capture a vmcore. Given this, we have updated the default
+crashkernel reservation to start from 2G, with 256M allocated for crash
+recovery.
+
+Since 256M is a significant portion of memory on smaller systems, we have
+decided not to reserve crashkernel memory by default on systems with less
+than 2G of RAM. However, users can still manually adjust the `crashkernel=`
+setting via tools like `grubby` if needed.
+
+Signed-off-by: Lichen Liu <lichliu@redhat.com>
+Signed-off-by: Coiby Xu <coxu@redhat.com>
+---
+ crashkernel-howto.txt | 2 +-
+ kdump-lib.sh          | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/crashkernel-howto.txt b/crashkernel-howto.txt
+index 2e99a34e..bd369cb8 100644
+--- a/crashkernel-howto.txt
++++ b/crashkernel-howto.txt
+@@ -17,7 +17,7 @@ Latest kexec-tools provides "kdumpctl get-default-crashkernel" to retrieve
+ the default crashkernel value,
+ 
+ 	$ echo $(kdumpctl get-default-crashkernel)
+-	1G-4G:192M,4G-64G:256M,64G-:512M
++	2G-64G:256M,64G-:512M
+ 
+ It will be taken as the default value of 'crashkernel=', you can use
+ this value as a reference for setting crashkernel value manually.
+diff --git a/kdump-lib.sh b/kdump-lib.sh
+index 5bdc4929..143f5056 100755
+--- a/kdump-lib.sh
++++ b/kdump-lib.sh
+@@ -1005,7 +1005,7 @@ kdump_get_arch_recommend_crashkernel()
+ 	_arch=$(uname -m)
+ 
+ 	if [[ $_arch == "x86_64" ]] || [[ $_arch == "s390x" ]]; then
+-		_ck_cmdline="1G-4G:192M,4G-64G:256M,64G-:512M"
++		_ck_cmdline="2G-64G:256M,64G-:512M"
+ 		is_sme_or_sev_active && ((_delta += 64))
+ 	elif [[ $_arch == "aarch64" ]]; then
+ 		local _running_kernel
+-- 
+2.48.1
+
