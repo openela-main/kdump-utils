@@ -1,0 +1,120 @@
+From 0678138331f6de43aaee0b7fbacf8adb38e73ff0 Mon Sep 17 00:00:00 2001
+From: Coiby Xu <coxu@redhat.com>
+Date: Thu, 17 Jul 2025 17:25:38 +0800
+Subject: [PATCH] Support dumping to NVMe/TCP configured using NVMe Boot
+ Firmware Table
+
+Resolves: https://issues.redhat.com/browse/RHEL-100907
+Resolves: https://issues.redhat.com/browse/RHEL-33413
+
+The dracut nvmf module can take care of all things. It can parse ACPI
+NVMe Boot Firmware Table (NBFT) tables, generate NetworkManager profiles
+and discover and connect all subsystems.
+
+Currently, the dracut kdump module will try to bring up the same network
+connections as in 1st kernel. But a different set of NVMe connections
+and active network interfaces will be used for the case of multipathing.
+So the dracut kdump module should let dracut nvmf module do everything.
+
+Note connecting everything and having network redundancy may require extra
+memory and the default crashkernel may not work. We'll document this
+issue and ask users to increase the crashkernel.
+
+Signed-off-by: Coiby Xu <coxu@redhat.com>
+---
+ dracut/99kdumpbase/module-setup.sh | 37 +++++++++++++++++++++++++-----
+ supported-kdump-targets.txt        |  2 ++
+ 2 files changed, 33 insertions(+), 6 deletions(-)
+
+diff --git a/dracut/99kdumpbase/module-setup.sh b/dracut/99kdumpbase/module-setup.sh
+index d71b28ce..f2a8a24f 100755
+--- a/dracut/99kdumpbase/module-setup.sh
++++ b/dracut/99kdumpbase/module-setup.sh
+@@ -360,11 +360,6 @@ kdump_install_nmconnections() {
+             exit 1
+         fi
+     done <<< "$(nmcli -t -f device,filename connection show --active)"
+-
+-    # Stop dracut 35network-manger to calling nm-initrd-generator.
+-    # Note this line of code can be removed after NetworkManager >= 1.35.2
+-    # gets released.
+-    echo > "${initdir}/usr/libexec/nm-initrd-generator"
+ }
+ 
+ kdump_install_nm_netif_allowlist() {
+@@ -658,7 +653,7 @@ kdump_install_net() {
+         kdump_install_nmconnections
+         apply_nm_initrd_generator_timeouts
+         kdump_setup_znet "$_netifs"
+-        kdump_install_nm_netif_allowlist "$_netifs"
++        [[ $is_nvmf ]] || kdump_install_nm_netif_allowlist "$_netifs"
+         kdump_install_nic_driver "$_netifs"
+         kdump_install_resolv_conf
+     fi
+@@ -915,6 +910,33 @@ kdump_check_iscsi_targets() {
+     }
+ }
+ 
++# Callback function for for_each_host_dev_and_slaves_all
++#
++# Code adapted from the is_nvmf function of dracut nvmf module
++kdump_nvmf_callback() {
++    local _dev _d _trtype
++
++    _dev=$1
++
++    cd -P "/sys/dev/block/$_dev" || return 1
++    if [ -f partition ]; then
++        cd ..
++    fi
++
++    for _d in device/nvme*; do
++        [ -L "$_d" ] || continue
++        if readlink "$_d" | grep -q nvme-fabrics; then
++            read -r _trtype < "$_d"/transport
++            [[ $_trtype == "fc" || $_trtype == "tcp" || $_trtype == "rdma" ]] && return 0
++        fi
++    done
++    return 1
++}
++
++kdump_check_nvmf_target() {
++    for_each_host_dev_and_slaves_all kdump_nvmf_callback && is_nvmf=1
++}
++
+ # hostname -a is deprecated, do it by ourself
+ get_alias() {
+     local ips
+@@ -1074,6 +1096,7 @@ EOF
+ 
+ install() {
+     declare -A unique_netifs ovs_unique_netifs ipv4_usage ipv6_usage
++    local is_nvmf
+ 
+     kdump_module_init
+     kdump_install_conf
+@@ -1121,6 +1144,8 @@ install() {
+     # at some point of time.
+     kdump_check_iscsi_targets
+ 
++    kdump_check_nvmf_target
++
+     kdump_install_systemd_conf
+ 
+     # nfs/ssh dump will need to get host ip in second kernel and need to call 'ip' tool, see get_host_ip for more detail
+diff --git a/supported-kdump-targets.txt b/supported-kdump-targets.txt
+index 936a42b6..0c7af107 100644
+--- a/supported-kdump-targets.txt
++++ b/supported-kdump-targets.txt
+@@ -47,6 +47,8 @@ storage:
+         software FCoE (bnx2fc) (Extra configuration required,
+             please read "Note on FCoE" section below)
+         NVMe-FC (qla2xxx, lpfc)
++        NVMe/TCP configured by NVMe Boot Firmware Table (users may need to
++            increase the crashkernel value)
+ 
+ network:
+         Hardware using kernel modules: (igb, ixgbe, ice, i40e, e1000e, igc,
+-- 
+2.50.1
+

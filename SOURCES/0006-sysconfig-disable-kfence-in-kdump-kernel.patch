@@ -1,0 +1,64 @@
+From 2ca913e9ccb2b964241e8c885e00d56d54b8fbe1 Mon Sep 17 00:00:00 2001
+From: Baoquan He <bhe@redhat.com>
+Date: Mon, 11 Aug 2025 17:02:46 +0800
+Subject: [PATCH] sysconfig: disable kfence in kdump kernel
+Content-type: text/plain
+
+In commit ddb0bab1f7e1, I mistakenly added the 'kfence.sample_interval=0'
+into KDUMP_COMMANDLINE_APPEND which is taken as default parameters added
+into kdump kernel. The KDUMP_COMMANDLINE_APPEND value is for unsupported
+architecuture. We should append wanted kernel parameter to each
+supported architecture in "update_param KDUMP_COMMANDLINE_APPEND" place.
+
+Fix it now.
+
+Signed-off-by: Baoquan He <bhe@redhat.com>
+---
+ gen-kdump-sysconfig.sh | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/gen-kdump-sysconfig.sh b/gen-kdump-sysconfig.sh
+index ca2e7610bc59..e5afca0a910b 100755
+--- a/gen-kdump-sysconfig.sh
++++ b/gen-kdump-sysconfig.sh
+@@ -29,7 +29,7 @@ KDUMP_COMMANDLINE_REMOVE="hugepages hugepagesz slub_debug quiet log_buf_len swio
+ 
+ # This variable lets us append arguments to the current kdump commandline
+ # after processed by KDUMP_COMMANDLINE_REMOVE
+-KDUMP_COMMANDLINE_APPEND="irqpoll maxcpus=1 reset_devices novmcoredd cma=0 hugetlb_cma=0 kfence.sample_interval=0"
++KDUMP_COMMANDLINE_APPEND="irqpoll maxcpus=1 reset_devices novmcoredd cma=0 hugetlb_cma=0"
+ 
+ # This variable lets us append arguments to fadump (powerpc) capture kernel,
+ # further to the parameters passed via the bootloader.
+@@ -82,11 +82,11 @@ case "$1" in
+ aarch64)
+ 	update_param KEXEC_ARGS "-s"
+ 	update_param KDUMP_COMMANDLINE_APPEND \
+-		"irqpoll nr_cpus=1 reset_devices cgroup_disable=memory udev.children-max=2 panic=10 swiotlb=noforce novmcoredd cma=0 hugetlb_cma=0"
++		"irqpoll nr_cpus=1 reset_devices cgroup_disable=memory udev.children-max=2 panic=10 swiotlb=noforce novmcoredd cma=0 hugetlb_cma=0 kfence.sample_interval=0"
+ 	;;
+ i386)
+ 	update_param KDUMP_COMMANDLINE_APPEND \
+-		"irqpoll nr_cpus=1 reset_devices numa=off udev.children-max=2 panic=10 transparent_hugepage=never novmcoredd cma=0 hugetlb_cma=0"
++		"irqpoll nr_cpus=1 reset_devices numa=off udev.children-max=2 panic=10 transparent_hugepage=never novmcoredd cma=0 hugetlb_cma=0 kfence.sample_interval=0"
+ 	;;
+ ppc64)
+ 	update_param KEXEC_ARGS "--dt-no-old-root"
+@@ -109,12 +109,12 @@ s390x)
+ 	update_param KDUMP_COMMANDLINE_REMOVE \
+ 		"hugepages hugepagesz slub_debug quiet log_buf_len swiotlb vmcp_cma cma hugetlb_cma prot_virt ignition.firstboot zfcp.allow_lun_scan"
+ 	update_param KDUMP_COMMANDLINE_APPEND \
+-		"nr_cpus=1 cgroup_disable=memory numa=off udev.children-max=2 panic=10 transparent_hugepage=never novmcoredd vmcp_cma=0 cma=0 hugetlb_cma=0"
++		"nr_cpus=1 cgroup_disable=memory numa=off udev.children-max=2 panic=10 transparent_hugepage=never novmcoredd vmcp_cma=0 cma=0 hugetlb_cma=0 kfence.sample_interval=0"
+ 	;;
+ x86_64)
+ 	update_param KEXEC_ARGS "-s"
+ 	update_param KDUMP_COMMANDLINE_APPEND \
+-		"irqpoll nr_cpus=1 reset_devices cgroup_disable=memory mce=off numa=off udev.children-max=2 panic=10 acpi_no_memhotplug transparent_hugepage=never nokaslr hest_disable novmcoredd cma=0 hugetlb_cma=0 pcie_ports=compat"
++		"irqpoll nr_cpus=1 reset_devices cgroup_disable=memory mce=off numa=off udev.children-max=2 panic=10 acpi_no_memhotplug transparent_hugepage=never nokaslr hest_disable novmcoredd cma=0 hugetlb_cma=0 pcie_ports=compat kfence.sample_interval=0"
+ 	;;
+ *)
+ 	echo "Warning: Unknown architecture '$1', using default sysconfig template." >&2
+-- 
+2.41.0
+

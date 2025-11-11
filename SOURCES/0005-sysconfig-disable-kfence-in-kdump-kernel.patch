@@ -1,0 +1,47 @@
+From ddb0bab1f7e1e43a802993aadad03f85a3c045a9 Mon Sep 17 00:00:00 2001
+From: Baoquan He <bhe@redhat.com>
+Date: Wed, 25 Jun 2025 23:30:24 +0800
+Subject: [PATCH] sysconfig: disable kfence in kdump kernel
+Content-type: text/plain
+
+In the current fedora and RHEL, below config items related to kfence
+feature are set by default:
+
+===
+CONFIG_HAVE_ARCH_KFENCE=y
+CONFIG_KFENCE=y
+CONFIG_KFENCE_SAMPLE_INTERVAL=100
+CONFIG_KFENCE_NUM_OBJECTS=255
+CONFIG_KFENCE_STRESS_TEST_FAULTS=0
+CONFIG_KFENCE_KUNIT_TEST=m
+===
+
+With them set, on x86_64, it will cost 2M extra memory used for kfence when
+page size if 4K; while on arm64 with 64K page size, it will cost 32M extra
+memory. This doesn't take memory cost of initializing and running kfence
+itself into account, here only saying the kfence objects and guarded
+pages. However, it doesn't make any sense to have kfence in a kdump
+kernel. Hence, disable kfence in kdump kernel to save crashkernel
+memory.
+
+Signed-off-by: Baoquan He <bhe@redhat.com>
+---
+ gen-kdump-sysconfig.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gen-kdump-sysconfig.sh b/gen-kdump-sysconfig.sh
+index 8ed63ba6eb9d..ca2e7610bc59 100755
+--- a/gen-kdump-sysconfig.sh
++++ b/gen-kdump-sysconfig.sh
+@@ -29,7 +29,7 @@ KDUMP_COMMANDLINE_REMOVE="hugepages hugepagesz slub_debug quiet log_buf_len swio
+ 
+ # This variable lets us append arguments to the current kdump commandline
+ # after processed by KDUMP_COMMANDLINE_REMOVE
+-KDUMP_COMMANDLINE_APPEND="irqpoll maxcpus=1 reset_devices novmcoredd cma=0 hugetlb_cma=0"
++KDUMP_COMMANDLINE_APPEND="irqpoll maxcpus=1 reset_devices novmcoredd cma=0 hugetlb_cma=0 kfence.sample_interval=0"
+ 
+ # This variable lets us append arguments to fadump (powerpc) capture kernel,
+ # further to the parameters passed via the bootloader.
+-- 
+2.41.0
+
