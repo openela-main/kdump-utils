@@ -1,0 +1,26 @@
+From 2f360e819ae7b80347c567c29a9ead979edb6ed3 Mon Sep 17 00:00:00 2001
+From: Pingfan Liu <piliu@redhat.com>
+Date: Tue, 16 Dec 2025 11:02:33 +0800
+Subject: [PATCH] powerpc: Set nr_cpus=16 for kdump kernel
+
+Signed-off-by: Pingfan Liu <piliu@redhat.com>
+---
+ gen-kdump-sysconfig.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gen-kdump-sysconfig.sh b/gen-kdump-sysconfig.sh
+index eb5287b..53115c1 100755
+--- a/gen-kdump-sysconfig.sh
++++ b/gen-kdump-sysconfig.sh
+@@ -100,7 +100,7 @@ ppc64le)
+ 	update_param KDUMP_COMMANDLINE_REMOVE \
+ 		"hugepages hugepagesz slub_debug quiet log_buf_len swiotlb hugetlb_cma ignition.firstboot"
+ 	update_param KDUMP_COMMANDLINE_APPEND \
+-		"irqpoll nr_cpus=1 noirqdistrib reset_devices cgroup_disable=memory numa=off udev.children-max=2 ehea.use_mcs=0 panic=10 kvm_cma_resv_ratio=0 transparent_hugepage=never novmcoredd hugetlb_cma=0 kfence.sample_interval=0"
++		"irqpoll nr_cpus=16 noirqdistrib reset_devices cgroup_disable=memory numa=off udev.children-max=2 ehea.use_mcs=0 panic=10 kvm_cma_resv_ratio=0 transparent_hugepage=never novmcoredd hugetlb_cma=0 kfence.sample_interval=0"
+ 	update_param FADUMP_COMMANDLINE_APPEND \
+ 		"nr_cpus=16 numa=off cgroup_disable=memory cma=0 kvm_cma_resv_ratio=0 hugetlb_cma=0 transparent_hugepage=never novmcoredd udev.children-max=2"
+ 	;;
+-- 
+2.49.0
+

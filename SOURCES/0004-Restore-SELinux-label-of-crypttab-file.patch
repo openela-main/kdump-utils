@@ -1,0 +1,80 @@
+From fe2891da11ce088ce14f7b2913bd3123b8f7c727 Mon Sep 17 00:00:00 2001
+From: Coiby Xu <coxu@redhat.com>
+Date: Mon, 3 Nov 2025 09:55:07 +0800
+Subject: [PATCH 4/5] Restore SELinux label of crypttab file
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Currently, for LUKS encrypted dump target, the system can have booting
+problem with relatively older selinux-policy e.g. 40.13.21-1.el10 or
+38.1.65-1.el9.noarch,
+
+    [***   ] Job dev-disk-by\x2duuid-55f4fce1\x2…tart running (1min 21s / 1min 30s)
+    ...
+    [ TIME ] Timed out waiting for device dev-d…f4fce1-cd7f-43a6-8729-f0edcd048d73.
+    [DEPEND] Dependency failed for luks.mount - /luks.
+    [DEPEND] Dependency failed for local-fs.target - Local File Systems.
+    [DEPEND] Dependency failed for selinux-auto…k the need to relabel after reboot.
+    ...
+    [FAILED] Failed to start kdump.service - Crash recovery kernel arming.
+    See 'systemctl status kdump.service' for details.
+    You are in emergency mode. After logging in, type "journalctl -xb" to view
+    system logs, "systemctl reboot" to reboot, or "exit"
+    to continue bootup.
+        [    4.375155] systemd-cryptsetup-generator[690]: Failed to open /etc/crypttab: Permission denied
+        [    4.376555] audit: type=1400 audit(1762134586.538:4): avc:  denied  { open } for  pid=690 comm="systemd-cryptse" path="/etc/crypttab" dev="vda3" ino=16916076 scontext=system_u:system_r:init_t:s0 tcontext=unconfined_u:object_r:user_tmp_t:s0 tclass=file permissive=0
+
+This happens because the updated crypttab file for LUKS dump target has
+incorrect SELinux label as it's created by mktemp. As a result, SELinux
+will prevent systemd-cryptsetup-generator from accessing crypttab and
+the encrypted dump target can fail to mount,
+
+    # ls -Z /etc/crypttab
+    unconfined_u:object_r:user_tmp_t:s0 /etc/crypttab
+
+Restore the SELinux label of crypttab to fix this issue,
+    # ls -Z /etc/crypttab
+    unconfined_u:object_r:etc_t:s0 /etc/crypttab
+
+Although this issue no longer happens to newer selinux-policy like
+policy-42.1.9-1.el10.noarch, it's better to restore the SELinux label of
+crypttab file.
+
+Fixes: 4e0d4cae ("Add kdumpctl setup-crypttab subcommand")
+Signed-off-by: Coiby Xu <coxu@redhat.com>
+---
+ kdumpctl                             | 1 +
+ spec/kdumpctl_setup_crypttab_spec.sh | 4 ++++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/kdumpctl b/kdumpctl
+index 6988ace1..e0aca1a6 100755
+--- a/kdumpctl
++++ b/kdumpctl
+@@ -1316,6 +1316,7 @@ setup_crypttab()
+ 		return 0
+ 	else
+ 		mv "$temp_file" "$CRYPTTAB_FILE"
++		restorecon "$CRYPTTAB_FILE"
+ 		dinfo "Success! $CRYPTTAB_FILE has been updated."
+ 
+ 		# Parse status updates and report on each changed UUID
+diff --git a/spec/kdumpctl_setup_crypttab_spec.sh b/spec/kdumpctl_setup_crypttab_spec.sh
+index bfcd8dc6..0250e02b 100644
+--- a/spec/kdumpctl_setup_crypttab_spec.sh
++++ b/spec/kdumpctl_setup_crypttab_spec.sh
+@@ -5,6 +5,10 @@ Describe "kdumpctl "
+ 	dinfo() {
+ 		echo "$1"
+ 	}
++	restorecon() {
++		:
++	}
++
+ 	Describe "setup_crypttab()"
+ 		# Set up global variables and mocks for each test
+ 		# shellcheck disable=SC2016 # expand expression later
+-- 
+2.51.1
+

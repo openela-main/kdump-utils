@@ -1,0 +1,49 @@
+From 9a51c4b4742b7bf778e2dc32cff24d94bb2a5cd1 Mon Sep 17 00:00:00 2001
+From: Pingfan Liu <piliu@redhat.com>
+Date: Fri, 28 Nov 2025 13:51:21 +0800
+Subject: [PATCH 3/3] kdump.sh: Skip num-threads when -E and -F option is
+ present
+
+Resolves: https://issues.redhat.com/browse/RHEL-75537
+
+Configure "makedumpfile -E -d 31" in kdump.conf, and panic the system, kdump will fail with the error as:
+
+[ 41.891856] kdump.sh[724]: --num-threads cannot used with ELF format.
+[ 41.897104] kdump.sh[724]: Commandline parameter is invalid.
+[ 41.897290] kdump.sh[724]: Try `makedumpfile --help' for more information.
+[ 41.897435] kdump.sh[724]: makedumpfile Failed.
+[ 41.898804] kdump[726]:
+saving vmcore failed, exitcode:1
+
+Skip --num-threads when -E option is given.
+
+As for the -F option, it is meaningless to sequentially access linear
+addresses with multiple threads Skip --num-threads too in that case.
+
+Signed-off-by: Pingfan Liu <piliu@redhat.com>
+---
+ dracut/99kdumpbase/kdump.sh | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/dracut/99kdumpbase/kdump.sh b/dracut/99kdumpbase/kdump.sh
+index 656911f..5155453 100755
+--- a/dracut/99kdumpbase/kdump.sh
++++ b/dracut/99kdumpbase/kdump.sh
+@@ -116,7 +116,13 @@ get_kdump_confs() {
+             fi
+             THREADS=$(nproc)
+             if [ "$THREADS" -gt 1 ]; then
+-                CORE_COLLECTOR="$CORE_COLLECTOR --num-threads=$THREADS"
++                case "$CORE_COLLECTOR" in
++                    *-F* | *-E*) ;;
++
++                    *)
++                        CORE_COLLECTOR="$CORE_COLLECTOR --num-threads=$THREADS"
++                        ;;
++                esac
+             fi
+             ;;
+     esac
+-- 
+2.49.0
+

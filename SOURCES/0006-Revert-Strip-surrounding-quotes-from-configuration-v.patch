@@ -1,0 +1,63 @@
+From 8062d687ef56d61d2b9a581e0fd6f291466d5dfa Mon Sep 17 00:00:00 2001
+From: Lichen Liu <lichliu@redhat.com>
+Date: Tue, 25 Nov 2025 12:08:00 +0800
+Subject: [PATCH 6/7] Revert "Strip surrounding quotes from configuration
+ values"
+
+This reverts commit 1a733872aeab1d1dcc0b063cd05afe61bbeb1c33.
+
+kdump_get_conf_val() will be rewritten so this commit is not
+needed at all.
+
+Signed-off-by: Lichen Liu <lichliu@redhat.com>
+---
+ dracut/99kdumpbase/module-setup.sh | 2 +-
+ kdump-lib-initramfs.sh             | 5 ++---
+ kdumpctl                           | 1 -
+ 3 files changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/dracut/99kdumpbase/module-setup.sh b/dracut/99kdumpbase/module-setup.sh
+index 32819ab..313d74e 100755
+--- a/dracut/99kdumpbase/module-setup.sh
++++ b/dracut/99kdumpbase/module-setup.sh
+@@ -724,7 +724,7 @@ kdump_install_conf() {
+     kdump_read_conf > "${initdir}/tmp/$$-kdump.conf"
+ 
+     while read -r _opt _val; do
+-        [[ $_val == \"*\" ]] && _val=${_val:1:-1}
++        # remove inline comments after the end of a directive.
+         case "$_opt" in
+             raw)
+                 _pdev=$(persistent_policy="by-id" kdump_get_persistent_dev "$_val")
+diff --git a/kdump-lib-initramfs.sh b/kdump-lib-initramfs.sh
+index 39e52a6..97760bf 100755
+--- a/kdump-lib-initramfs.sh
++++ b/kdump-lib-initramfs.sh
+@@ -29,10 +29,9 @@ kdump_read_conf()
+ kdump_get_conf_val()
+ {
+ 	# For lines matching "^\s*$1\s+", remove matched part (config name including space),
+-	# remove tailing comment, space and the surrounding quotes, then store in hold space.
+-	# Print out the hold buffer on last line.
++	# remove tailing comment, space, then store in hold space. Print out the hold buffer on last line.
+ 	[ -f "$KDUMP_CONFIG_FILE" ] &&
+-		sed -n -e "/^\s*\($1\)\s\+/{s/^\s*\($1\)\s\+//;s/#.*//;s/\s*$//;s/^\"\(.*\)\"$/\1/;h};\${x;p}" $KDUMP_CONFIG_FILE
++		sed -n -e "/^\s*\($1\)\s\+/{s/^\s*\($1\)\s\+//;s/#.*//;s/\s*$//;h};\${x;p}" $KDUMP_CONFIG_FILE
+ }
+ 
+ is_mounted()
+diff --git a/kdumpctl b/kdumpctl
+index d630820..e47396e 100755
+--- a/kdumpctl
++++ b/kdumpctl
+@@ -324,7 +324,6 @@ _set_config()
+ 		fi
+ 		return 1
+ 	fi
+-	[[ $_val == \"*\" ]] && _val=${_val:1:-1}
+ 	OPT[$opt]="$val"
+ }
+ 
+-- 
+2.51.1
+

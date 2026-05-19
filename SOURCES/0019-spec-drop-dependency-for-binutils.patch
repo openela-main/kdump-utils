@@ -1,0 +1,186 @@
+From 48dd252bf8cc75c696d5d7e9a07efc838e3aad66 Mon Sep 17 00:00:00 2001
+From: Philipp Rudo <prudo@redhat.com>
+Date: Tue, 2 Sep 2025 13:28:32 +0200
+Subject: [PATCH] spec: drop dependency for binutils
+
+The binutils were added as dependency to support UKIs. With the main
+part of the UKI support been moved to kexec-tools only one spot remains
+in prepare_kdump_bootinfo where they are used. Refractor
+prepare_kdump_bootinfo to get rid of the dependency.
+
+This slightly changes the behavior for UKIs. In particular the kdump
+initrd is moved from /boot to /var/lib/kdump.
+
+While at it also simplify the logic in prepare_kdump_bootinfo as it is
+unnecessarily complex and can lead to weird corner cases. For example if
+the default initrd is located at /boot/$machine_id/$kernel_version/initrd
+and the directory is not writable, then the kdump initrd would be stored
+at /var/lib/kdump/initrdkdump without any information about the kernel
+version. This can lead to all sorts of problems when multiple kernel
+versions are installed. Thus always use
+initramfs-${kernel_version}kdump.img when the initrd is stored at
+/var/lib/kdump. Update 60-kdump.install accordingly.
+
+Signed-off-by: Philipp Rudo <prudo@redhat.com>
+Signed-off-by: Coiby Xu <coxu@redhat.com>
+---
+ 60-kdump.install | 24 ++++++++++--------
+ kdump-lib.sh     | 64 +++++++++++++-----------------------------------
+ kdump-utils.spec |  2 --
+ 3 files changed, 31 insertions(+), 59 deletions(-)
+
+diff --git a/60-kdump.install b/60-kdump.install
+index 458adb6..7272a79 100755
+--- a/60-kdump.install
++++ b/60-kdump.install
+@@ -10,16 +10,19 @@ if ! [[ ${KERNEL_INSTALL_MACHINE_ID-x} ]]; then
+ fi
+ 
+ if [[ -d "$KDUMP_INITRD_DIR_ABS" ]]; then
+-    KDUMP_INITRD="initrdkdump"
++    KDUMP_INITRD="$KDUMP_INITRD_DIR_ABS/initrdkdump"
+ else
+-    # If `KDUMP_BOOTDIR` is not writable, then the kdump
+-    # initrd must have been placed at `/var/lib/kdump`
+-    if [[ ! -w "/boot" ]]; then
+-        KDUMP_INITRD_DIR_ABS="/var/lib/kdump"
+-    else
+-        KDUMP_INITRD_DIR_ABS="/boot"
+-    fi
+-    KDUMP_INITRD="initramfs-${KERNEL_VERSION}kdump.img"
++    # Usually the initrd is stored besides the kernel image in /boot. But there
++    # are some exceptions when /boot isn't writable or there is no "normal"
++    # initrd, e.g. for UKIs. In those cases the KDUMP_INITRD is stored in
++    # /var/lib/kdump.
++
++    _initrd="initramfs-${KERNEL_VERSION}kdump.img"
++    for dir in "/boot" "/var/lib/kdump"; do
++        [[ -f "$dir/$_initrd" ]] || continue
++        KDUMP_INITRD="$dir/$_initrd"
++        break
++    done
+ fi
+ 
+ ret=0
+@@ -34,7 +37,8 @@ case "$COMMAND" in
+                 echo "Multiple entry types may exist, not removing kdump initrd."
+             exit 0
+         fi
+-        rm -f -- "$KDUMP_INITRD_DIR_ABS/$KDUMP_INITRD"
++        [[ -n "$KDUMP_INITRD" ]] || exit 0
++        rm -f -- "$KDUMP_INITRD"
+         ret=$?
+         ;;
+ esac
+diff --git a/kdump-lib.sh b/kdump-lib.sh
+index 32e43c6..639256c 100755
+--- a/kdump-lib.sh
++++ b/kdump-lib.sh
+@@ -17,17 +17,6 @@ FADUMP_APPEND_ARGS_SYS_NODE="/sys/kernel/fadump/bootargs_append"
+ # shellcheck disable=SC2034
+ FENCE_KDUMP_CONFIG_FILE="/etc/sysconfig/fence_kdump"
+ 
+-is_uki()
+-{
+-	local img
+-
+-	img="$1"
+-
+-	[[ -f $img ]] || return
+-	[[ "$(objdump -a "$img" 2> /dev/null)" =~ pei-(x86-64|aarch64-little) ]] || return
+-	objdump -h -j .linux "$img" &> /dev/null
+-}
+-
+ is_fadump_capable()
+ {
+ 	# Check if firmware-assisted dump is enabled
+@@ -621,7 +610,7 @@ _get_kdump_kernel_version()
+ #
+ prepare_kdump_bootinfo()
+ {
+-	local boot_initrdlist default_initrd_base var_target_initrd_dir
++	local _initrd
+ 
+ 	KDUMP_KERNELVER=$(_get_kdump_kernel_version)
+ 	KDUMP_KERNEL=$(prepare_kdump_kernel "$KDUMP_KERNELVER")
+@@ -632,48 +621,29 @@ prepare_kdump_bootinfo()
+ 	fi
+ 
+ 	# For 64k variant, e.g. vmlinuz-5.14.0-327.el9.aarch64+64k-debug
+-	if [[ $KDUMP_KERNEL == *"+debug" || $KDUMP_KERNEL == *"64k-debug" ]]; then
++	if [[ ${KDUMP_KERNEL##*+} == ?(64k-)debug ]]; then
+ 		dwarn "Using debug kernel, you may need to set a larger crashkernel than the default value."
+ 	fi
+ 
+-	# Set KDUMP_BOOTDIR to where kernel image is stored
+-	if is_uki "$KDUMP_KERNEL"; then
+-		KDUMP_BOOTDIR=/boot
+-	else
+-		KDUMP_BOOTDIR=$(dirname "$KDUMP_KERNEL")
+-	fi
+-
+-	# Default initrd should just stay aside of kernel image, try to find it in KDUMP_BOOTDIR
+-	boot_initrdlist="initramfs-$KDUMP_KERNELVER.img initrd"
+-	for initrd in $boot_initrdlist; do
+-		if [[ -f "$KDUMP_BOOTDIR/$initrd" ]]; then
+-			default_initrd_base="$initrd"
+-			DEFAULT_INITRD="$KDUMP_BOOTDIR/$default_initrd_base"
+-			break
+-		fi
++	KDUMP_BOOTDIR="$(dirname "$KDUMP_KERNEL")"
++	for _initrd in "initramfs-$KDUMP_KERNELVER.img" "initrd"; do
++		[[ -f "$KDUMP_BOOTDIR/$_initrd" ]] || continue
++		DEFAULT_INITRD="$KDUMP_BOOTDIR/$_initrd"
++		break
+ 	done
+ 
+-	# Create kdump initrd basename from default initrd basename
+-	# initramfs-5.7.9-200.fc32.x86_64.img => initramfs-5.7.9-200.fc32.x86_64kdump.img
+-	# initrd => initrdkdump
+-	if [[ -z $default_initrd_base ]]; then
+-		kdump_initrd_base=initramfs-${KDUMP_KERNELVER}kdump.img
+-	elif [[ $default_initrd_base == *.* ]]; then
+-		kdump_initrd_base=${default_initrd_base%.*}kdump.${DEFAULT_INITRD##*.}
+-	else
+-		kdump_initrd_base=${default_initrd_base}kdump
+-	fi
+-
+-	# Place kdump initrd in $(/var/lib/kdump) if $(KDUMP_BOOTDIR) not writable
+-	if [[ ! -w $KDUMP_BOOTDIR ]]; then
+-		var_target_initrd_dir="/var/lib/kdump"
+-		mkdir -p "$var_target_initrd_dir"
+-		# shellcheck disable=SC2034 # KDUMP_INITRD is used by kdumpctl
+-		KDUMP_INITRD="$var_target_initrd_dir/$kdump_initrd_base"
++	# There are cases where $DEFAULT_INITRD can be empty, e.g. for UKIs.
++	if [[ -z $DEFAULT_INITRD ]] || [[ ! -w $KDUMP_BOOTDIR ]]; then
++		local statedir="/var/lib/kdump"
++		mkdir -p "$statedir"
++		_initrd="$statedir/initramfs-${KDUMP_KERNELVER}kdump.img"
++	elif [[ $DEFAULT_INITRD == *.img ]]; then
++		_initrd="${DEFAULT_INITRD/%.img/kdump.img}"
+ 	else
+-		# shellcheck disable=SC2034 # KDUMP_INITRD is used by kdumpctl
+-		KDUMP_INITRD="$KDUMP_BOOTDIR/$kdump_initrd_base"
++		_initrd="${DEFAULT_INITRD}kdump"
+ 	fi
++	# shellcheck disable=SC2034 # KDUMP_INITRD is used by kdumpctl
++	KDUMP_INITRD="$_initrd"
+ }
+ 
+ get_watchdog_drvs()
+diff --git a/kdump-utils.spec b/kdump-utils.spec
+index 1d78127..2bfb217 100644
+--- a/kdump-utils.spec
++++ b/kdump-utils.spec
+@@ -23,8 +23,6 @@ Requires: dracut-squash >= 058
+ Requires: ethtool
+ Requires: gawk
+ Requires: util-linux
+-# Needed for UKI support
+-Recommends: binutils
+ Recommends: grubby
+ Recommends: hostname
+ BuildRequires: make
+-- 
+2.52.0
+
